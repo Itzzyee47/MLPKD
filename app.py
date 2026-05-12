@@ -11,6 +11,21 @@ st.set_page_config(
 
 init_session()
 
+# ── Query-param navigation (makes <a href="?page=X"> links work) ───────────
+# Only treat ?page= as a navigation event when there is NO session token in
+# the URL (i.e. it's a link click, not a page reload with an active session).
+_nav = st.query_params.get("page")
+_has_session = st.query_params.get("s")
+if _nav and not _has_session:
+    st.session_state.page = _nav
+    st.query_params.clear()
+    st.rerun()
+
+# ── Keep URL in sync so reload always restores current page + session ───────
+if st.session_state.get("logged_in") and st.session_state.get("_session_token"):
+    st.query_params["s"]    = st.session_state._session_token
+    st.query_params["page"] = st.session_state.page
+
 # ── Global theme CSS ───────────────────────────────────────────────────────
 st.markdown("""
 <style>
