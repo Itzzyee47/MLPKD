@@ -319,7 +319,6 @@ def show():
                     <div class="form-group">
                         <label class="field-label">Role</label>
                         <select id="html_role" class="form-select" required>
-                            <option value="">Select your role</option>
                             <option value="patient">Patient</option>
                             <option value="nurse">Nurse</option>
                             <option value="lab_tech">Lab Technician</option>

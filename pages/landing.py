@@ -189,8 +189,7 @@ def show():
         .section-title { font-size: 2.1rem; }
         .blog-grid { grid-template-columns: 1fr 1fr 1fr; gap: 1.5rem; padding: 0 2rem; }
         .blog-section-header { margin: 3rem 0 1.5rem; padding: 0 2rem; }
-        .blog-section-wrapper { min-height: 80vh; }
-        .cta-strip { margin: 3rem 0 1.5rem; padding: 3rem 4rem; min-height: 80vh; }
+        .cta-strip { margin: 3rem 0 1.5rem; padding: 3rem 4rem; }
         .cta-strip h2 { font-size: 1.9rem; }
     }
 

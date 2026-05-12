@@ -1,6 +1,6 @@
 import streamlit as st
 from utils.auth import require_role, logout
-from utils.db import get_users
+from utils.db import get_user, get_profile, upsert_profile, get_vitals
 
 _CSS = """
 <style>
@@ -53,8 +53,7 @@ _CSS = """
 
 def show():
     require_role(["patient"])
-    db = get_users()
-    user = db.get(st.session_state.username, {})
+    user = get_user(st.session_state.username) or {}
     name = user.get("name", st.session_state.username)
     predictions = user.get("data", {}).get("predictions", [])
     last_result = predictions[-1].get("result", "—") if predictions else "—"
@@ -103,7 +102,7 @@ def show():
     st.markdown("<br>", unsafe_allow_html=True)
 
     # ── Tabs ───────────────────────────────────────────────────────────────
-    tab1, tab2 = st.tabs(["🏠  Overview", "🔍  My Predictions"])
+    tab1, tab2, tab3, tab4 = st.tabs(["🏠  Overview", "🔍  My Predictions", "💓  My Vitals", "👤  My Profile"])
 
     with tab1:
         col_left, col_right = st.columns([3, 2])
@@ -180,6 +179,77 @@ def show():
                     if pred.get("features"):
                         st.markdown("**Input Features:**")
                         st.json(pred["features"])
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    with tab3:
+        st.markdown('<div class="section-card"><h4>💓 My Vitals History</h4>', unsafe_allow_html=True)
+        vitals = get_vitals(st.session_state.username)
+        if not vitals:
+            st.info("No vitals recorded yet. Your nurse will add readings during your visits.")
+        else:
+            import pandas as pd
+            df = pd.DataFrame(vitals)
+            df = df.rename(columns={
+                "recorded_at": "Date/Time", "recorded_by": "Recorded By",
+                "bp": "BP (mmHg)", "heart_rate": "HR (bpm)",
+                "temperature": "Temp (°C)", "weight": "Weight (kg)",
+                "spo2": "SpO2 (%)", "respiratory_rate": "RR (/min)",
+                "notes": "Note",
+            })
+            st.dataframe(df, use_container_width=True, hide_index=True)
+
+            # Trend chart for BP and HR
+            if len(vitals) > 1:
+                import plotly.graph_objects as go
+                times = [v["recorded_at"][:10] if v["recorded_at"] else str(i) for i, v in enumerate(reversed(vitals))]
+                bps   = [v["bp"] for v in reversed(vitals)]
+                hrs   = [v["heart_rate"] for v in reversed(vitals)]
+                fig = go.Figure()
+                fig.add_trace(go.Scatter(x=times, y=bps, name="BP (mmHg)", line=dict(color="#e53e3e", width=2)))
+                fig.add_trace(go.Scatter(x=times, y=hrs, name="HR (bpm)",  line=dict(color="#0a8a74", width=2)))
+                fig.update_layout(title="BP & Heart Rate Trend", height=280,
+                    margin=dict(l=10,r=10,t=40,b=10), plot_bgcolor="#f7fdfb",
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02))
+                st.plotly_chart(fig, use_container_width=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    with tab4:
+        profile = get_profile(st.session_state.username)
+        st.markdown('<div class="section-card"><h4>👤 My Profile</h4>', unsafe_allow_html=True)
+        with st.form(key="patient_profile_form"):
+            col1, col2 = st.columns(2)
+            pf_email = col1.text_input("Email",  value=profile.get("email", ""))
+            pf_phone = col2.text_input("Phone",  value=profile.get("phone", ""))
+            col3, col4 = st.columns(2)
+            pf_sex   = col3.selectbox("Sex", ["Prefer not to say","Male","Female","Other"],
+                          index=["Prefer not to say","Male","Female","Other"].index(profile.get("sex", "Prefer not to say")))
+            pf_dob   = col4.text_input("Date of Birth (YYYY-MM-DD)", value=profile.get("dob", "") or "")
+            col5, col6 = st.columns(2)
+            pf_bg    = col5.selectbox("Blood Group", ["","A+","A-","B+","B-","AB+","AB-","O+","O-"],
+                          index=["","A+","A-","B+","B-","AB+","AB-","O+","O-"].index(profile.get("blood_group", "")))
+            pf_loc   = col6.text_input("Location / City", value=profile.get("location", ""))
+            pf_addr  = st.text_area("Address",           value=profile.get("address", ""), height=70)
+            pf_allg  = st.text_input("Known Allergies",         value=profile.get("allergies", ""))
+            pf_cond  = st.text_input("Pre-existing Conditions", value=profile.get("conditions", ""))
+            col7, col8 = st.columns(2)
+            pf_ecn   = col7.text_input("Emergency Contact Name",  value=profile.get("emergency_contact_name", ""))
+            pf_ecp   = col8.text_input("Emergency Contact Phone", value=profile.get("emergency_contact_phone", ""))
+            saved = st.form_submit_button("💾  Save Profile", type="primary", use_container_width=True)
+        if saved:
+            upsert_profile(st.session_state.username, {
+                "email": pf_email.strip() or None,
+                "phone": pf_phone.strip() or None,
+                "sex":   pf_sex,
+                "dob":   pf_dob.strip() or None,
+                "blood_group": pf_bg or None,
+                "location":    pf_loc.strip() or None,
+                "address":     pf_addr.strip() or None,
+                "allergies":   pf_allg.strip() or None,
+                "conditions":  pf_cond.strip() or None,
+                "emergency_contact_name":  pf_ecn.strip() or None,
+                "emergency_contact_phone": pf_ecp.strip() or None,
+            })
+            st.success("✓ Profile updated.")
         st.markdown("</div>", unsafe_allow_html=True)
 
     st.divider()
