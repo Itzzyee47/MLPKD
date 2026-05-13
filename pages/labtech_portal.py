@@ -1,6 +1,6 @@
 import streamlit as st
 from utils.auth import require_role, logout
-from utils.db import get_users
+from utils.db import get_users, get_profile, upsert_profile, update_user
 
 _CSS = """
 <style>
@@ -190,26 +190,65 @@ def show():
         st.markdown("</div>", unsafe_allow_html=True)
 
     with tab3:
-        st.markdown(f"""<div class="section-card"><h4>👤 My Profile</h4>
-        <div style="text-align:center;padding:1rem 0">
-            <div style="width:80px;height:80px;background:linear-gradient(135deg,#0a8a74,#0fbfa0);border-radius:50%;
-                display:flex;align-items:center;justify-content:center;font-size:2.5rem;margin:0 auto 0.8rem">🔬</div>
-            <div style="font-weight:800;color:#1a2e2b;font-size:1.1rem">{name}</div>
-            <div style="color:#6b7b78;font-size:0.85rem;margin-top:2px">@{st.session_state.username}</div>
-            <div style="margin-top:0.8rem;background:#e6faf6;color:#0a8a74;display:inline-block;
-                padding:0.3rem 1.2rem;border-radius:20px;font-size:0.82rem;font-weight:700">Lab Technician · Clinical Laboratory</div>
-        </div>
-        <div style="display:flex;gap:0.8rem;margin-top:1rem">
-            <div style="flex:1;text-align:center;background:#f7fdfb;border-radius:10px;padding:0.8rem">
-                <div style="font-size:1.3rem;font-weight:800;color:#0a8a74">{len(patients)}</div>
-                <div style="font-size:0.75rem;color:#6b7b78">Patients</div>
-            </div>
-            <div style="flex:1;text-align:center;background:#f7fdfb;border-radius:10px;padding:0.8rem">
-                <div style="font-size:1.3rem;font-weight:800;color:#0a8a74">—</div>
-                <div style="font-size:0.75rem;color:#6b7b78">Tests Done</div>
-            </div>
-        </div>
-        </div>""", unsafe_allow_html=True)
+        profile = get_profile(st.session_state.username)
+        st.markdown('<div class="section-card"><h4>👤 My Profile</h4>', unsafe_allow_html=True)
+
+        st.markdown("**Account Information**")
+        with st.form(key="labtech_account_form"):
+            col_a1, col_a2 = st.columns(2)
+            acc_name     = col_a1.text_input("Display Name", value=name)
+            acc_username = col_a2.text_input("Username", value=st.session_state.username)
+            col_a3, col_a4 = st.columns(2)
+            acc_pw  = col_a3.text_input("New Password (leave blank to keep current)", type="password")
+            acc_pw2 = col_a4.text_input("Confirm New Password", type="password")
+            acc_saved = st.form_submit_button("💾  Save Account Info", type="primary", use_container_width=True)
+        if acc_saved:
+            new_u = acc_username.strip()
+            new_n = acc_name.strip()
+            if not new_u:
+                st.error("Username cannot be empty.")
+            elif not new_n:
+                st.error("Display name cannot be empty.")
+            elif acc_pw and acc_pw != acc_pw2:
+                st.error("Passwords do not match.")
+            else:
+                ok, msg = update_user(st.session_state.username, new_u, new_n, acc_pw or None)
+                if ok:
+                    st.session_state.username = new_u
+                    st.success(f"✓ {msg}")
+                    st.rerun()
+                else:
+                    st.error(msg)
+
+        st.markdown("---")
+        st.markdown("**Extended Profile**")
+        with st.form(key="labtech_profile_form"):
+            col1, col2 = st.columns(2)
+            pf_email = col1.text_input("Email",  value=profile.get("email", ""))
+            pf_phone = col2.text_input("Phone",  value=profile.get("phone", ""))
+            col3, col4 = st.columns(2)
+            pf_sex   = col3.selectbox("Sex", ["Prefer not to say","Male","Female","Other"],
+                          index=["Prefer not to say","Male","Female","Other"].index(profile.get("sex", "Prefer not to say")))
+            pf_dob   = col4.text_input("Date of Birth (YYYY-MM-DD)", value=profile.get("dob", "") or "")
+            col5, col6 = st.columns(2)
+            pf_dept  = col5.text_input("Department",    value=profile.get("department", ""))
+            pf_lic   = col6.text_input("Lab Reg. No.",  value=profile.get("license_no", ""))
+            pf_loc   = st.text_input("Location / City", value=profile.get("location", ""))
+            pf_addr  = st.text_area("Address",          value=profile.get("address", ""), height=70)
+            saved = st.form_submit_button("💾  Save Profile", type="primary", use_container_width=True)
+        if saved:
+            upsert_profile(st.session_state.username, {
+                "email":      pf_email.strip() or None,
+                "phone":      pf_phone.strip() or None,
+                "sex":        pf_sex,
+                "dob":        pf_dob.strip() or None,
+                "department": pf_dept.strip() or None,
+                "license_no": pf_lic.strip() or None,
+                "location":   pf_loc.strip() or None,
+                "address":    pf_addr.strip() or None,
+            })
+            st.success("✓ Profile updated.")
+        st.markdown("</div>", unsafe_allow_html=True)
 
     st.divider()
     col_so, _ = st.columns([1, 5])
