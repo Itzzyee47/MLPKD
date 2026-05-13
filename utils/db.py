@@ -120,6 +120,39 @@ def authenticate(username: str, password: str) -> tuple[bool, dict | None]:
     return False, None
 
 
+def update_user(
+    old_username: str,
+    new_username: str,
+    new_name: str,
+    new_password: str = None,
+) -> tuple[bool, str]:
+    """Update username, display name, and optionally password.
+    Cascades username change across all related tables."""
+    sb = get_client()
+
+    if new_username != old_username:
+        existing = sb.table("users").select("username").eq("username", new_username).execute()
+        if existing.data:
+            return False, "That username is already taken."
+
+    payload: dict = {"name": new_name}
+    if new_username != old_username:
+        payload["username"] = new_username
+    if new_password:
+        payload["password_hash"] = bcrypt.hashpw(new_password.encode(), bcrypt.gensalt()).decode()
+
+    sb.table("users").update(payload).eq("username", old_username).execute()
+
+    if new_username != old_username:
+        sb.table("profiles").update({"username": new_username}).eq("username", old_username).execute()
+        sb.table("predictions").update({"username": new_username}).eq("username", old_username).execute()
+        sb.table("vitals").update({"patient_username": new_username}).eq("patient_username", old_username).execute()
+        sb.table("vitals").update({"recorded_by": new_username}).eq("recorded_by", old_username).execute()
+        sb.table("sessions").update({"username": new_username}).eq("username", old_username).execute()
+
+    return True, "Account updated successfully."
+
+
 # -- profiles --------------------------------------------------------------
 
 def get_profile(username: str) -> dict:
