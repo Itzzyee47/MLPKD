@@ -1,6 +1,6 @@
 import streamlit as st
 from utils.auth import require_role, logout
-from utils.db import get_users, register_user, add_vitals, get_vitals, get_profile, upsert_profile
+from utils.db import get_users, register_user, add_vitals, get_vitals, get_profile, upsert_profile, update_user
 
 _CSS = """
 <style>
@@ -234,6 +234,39 @@ def show():
     with tab5:
         profile = get_profile(st.session_state.username)
         st.markdown('<div class="section-card"><h4>👤 My Profile</h4>', unsafe_allow_html=True)
+
+        # ── Account Info ──────────────────────────────────────────────────
+        st.markdown("**Account Information**")
+        with st.form(key="nurse_account_form"):
+            col_a1, col_a2 = st.columns(2)
+            acc_name     = col_a1.text_input("Display Name", value=name)
+            acc_username = col_a2.text_input("Username", value=st.session_state.username)
+            col_a3, col_a4 = st.columns(2)
+            acc_pw  = col_a3.text_input("New Password (leave blank to keep current)", type="password")
+            acc_pw2 = col_a4.text_input("Confirm New Password", type="password")
+            acc_saved = st.form_submit_button("💾  Save Account Info", type="primary", use_container_width=True)
+        if acc_saved:
+            new_u = acc_username.strip()
+            new_n = acc_name.strip()
+            if not new_u:
+                st.error("Username cannot be empty.")
+            elif not new_n:
+                st.error("Display name cannot be empty.")
+            elif acc_pw and acc_pw != acc_pw2:
+                st.error("Passwords do not match.")
+            else:
+                ok, msg = update_user(st.session_state.username, new_u, new_n, acc_pw or None)
+                if ok:
+                    st.session_state.username = new_u
+                    st.success(f"✓ {msg}")
+                    st.rerun()
+                else:
+                    st.error(msg)
+
+        st.markdown("---")
+
+        # ── Extended Profile ──────────────────────────────────────────────
+        st.markdown("**Extended Profile**")
         with st.form(key="nurse_profile_form"):
             col1, col2 = st.columns(2)
             pf_email  = col1.text_input("Email",    value=profile.get("email", ""))
