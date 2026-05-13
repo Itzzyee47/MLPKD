@@ -1,6 +1,6 @@
 import streamlit as st
 from utils.auth import require_role, logout
-from utils.db import get_users
+from utils.db import get_users, register_user, add_vitals, get_vitals, get_profile, upsert_profile
 
 _CSS = """
 <style>
@@ -90,7 +90,7 @@ def show():
     st.markdown("<br>", unsafe_allow_html=True)
 
     # ── Tabs ───────────────────────────────────────────────────────────────
-    tab1, tab2, tab3 = st.tabs(["🏠  Overview", "📋  Record Vitals", "📝  Care Notes"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["🏠  Overview", "📋  Record Vitals", "📝  Care Notes", "➕  Add Patient", "👤  My Profile"])
 
     with tab1:
         col_left, col_right = st.columns([3, 2])
@@ -147,16 +147,46 @@ def show():
             resp = col6.number_input("Resp. Rate (/min)", 10, 40, 16)
 
             st.markdown("<br>", unsafe_allow_html=True)
+            vitals_note = st.text_input("Nurse note (optional)", placeholder="e.g. Patient appears anxious")
+
+            st.markdown("<br>", unsafe_allow_html=True)
             if st.button("💾  Save Vitals", type="primary", use_container_width=False):
-                # Flag out-of-range readings
                 alerts = []
                 if not (90 <= bp <= 120): alerts.append(f"⚠️ BP ({bp} mmHg) out of normal range")
                 if not (60 <= hr <= 100): alerts.append(f"⚠️ HR ({hr} bpm) out of normal range")
                 if not (36.5 <= temp <= 37.5): alerts.append(f"⚠️ Temp ({temp}°C) out of normal range")
                 if spo2 < 95: alerts.append(f"⚠️ SpO2 ({spo2}%) below normal")
+                add_vitals(
+                    patient_username=patient_names[selected],
+                    recorded_by=st.session_state.username,
+                    reading={
+                        "bp": bp, "heart_rate": hr, "temperature": temp,
+                        "weight": weight, "spo2": spo2, "respiratory_rate": resp,
+                        "notes": vitals_note.strip() or None,
+                    }
+                )
                 st.success(f"✓ Vitals saved for **{selected}**.")
                 for a in alerts:
                     st.warning(a)
+
+            # ── Vitals history for selected patient ─────────────────────
+            if patient_names:
+                st.markdown("---")
+                st.markdown("**📜 Vitals History**")
+                history = get_vitals(patient_names[selected])
+                if not history:
+                    st.info("No vitals recorded yet for this patient.")
+                else:
+                    import pandas as pd
+                    df = pd.DataFrame(history)
+                    df = df.rename(columns={
+                        "recorded_at": "Date/Time", "recorded_by": "Nurse",
+                        "bp": "BP (mmHg)", "heart_rate": "HR (bpm)",
+                        "temperature": "Temp (°C)", "weight": "Weight (kg)",
+                        "spo2": "SpO2 (%)", "respiratory_rate": "RR (/min)",
+                        "notes": "Note",
+                    })
+                    st.dataframe(df, use_container_width=True, hide_index=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
     with tab3:
@@ -172,6 +202,64 @@ def show():
         with col_b2:
             if st.button("🗑  Clear", use_container_width=True):
                 st.rerun()
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    with tab4:
+        st.markdown('<div class="section-card"><h4>➕ Register New Patient</h4>', unsafe_allow_html=True)
+        with st.form(key="add_patient_form", clear_on_submit=True):
+            p_name     = st.text_input("Full Name", placeholder="e.g. Jane Doe")
+            p_username = st.text_input("Username", placeholder="e.g. jane_doe (used to log in)")
+            col_p1, col_p2 = st.columns(2)
+            p_password  = col_p1.text_input("Password", type="password", placeholder="Minimum 6 characters")
+            p_password2 = col_p2.text_input("Confirm Password", type="password", placeholder="Repeat password")
+            submitted = st.form_submit_button("Register Patient", type="primary", use_container_width=True)
+
+        if submitted:
+            if not p_name.strip():
+                st.error("Full name is required.")
+            elif not p_username.strip():
+                st.error("Username is required.")
+            elif len(p_password) < 6:
+                st.error("Password must be at least 6 characters.")
+            elif p_password != p_password2:
+                st.error("Passwords do not match.")
+            else:
+                ok, msg = register_user(p_username.strip(), p_password, "patient", p_name.strip())
+                if ok:
+                    st.success(f"✓ Patient **{p_name.strip()}** registered successfully. They can now sign in with username `{p_username.strip()}`.")
+                else:
+                    st.error(msg)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    with tab5:
+        profile = get_profile(st.session_state.username)
+        st.markdown('<div class="section-card"><h4>👤 My Profile</h4>', unsafe_allow_html=True)
+        with st.form(key="nurse_profile_form"):
+            col1, col2 = st.columns(2)
+            pf_email  = col1.text_input("Email",    value=profile.get("email", ""))
+            pf_phone  = col2.text_input("Phone",    value=profile.get("phone", ""))
+            col3, col4 = st.columns(2)
+            pf_sex    = col3.selectbox("Sex", ["Prefer not to say","Male","Female","Other"],
+                          index=["Prefer not to say","Male","Female","Other"].index(profile.get("sex", "Prefer not to say")))
+            pf_dob    = col4.text_input("Date of Birth (YYYY-MM-DD)", value=profile.get("dob", "") or "")
+            col5, col6 = st.columns(2)
+            pf_dept   = col5.text_input("Department",  value=profile.get("department", ""))
+            pf_lic    = col6.text_input("License No.", value=profile.get("license_no", ""))
+            pf_loc    = st.text_input("Location / City", value=profile.get("location", ""))
+            pf_addr   = st.text_area("Address", value=profile.get("address", ""), height=80)
+            saved = st.form_submit_button("💾  Save Profile", type="primary", use_container_width=True)
+        if saved:
+            upsert_profile(st.session_state.username, {
+                "email": pf_email.strip() or None,
+                "phone": pf_phone.strip() or None,
+                "sex":   pf_sex,
+                "dob":   pf_dob.strip() or None,
+                "department": pf_dept.strip() or None,
+                "license_no": pf_lic.strip() or None,
+                "location": pf_loc.strip() or None,
+                "address":  pf_addr.strip() or None,
+            })
+            st.success("✓ Profile updated.")
         st.markdown("</div>", unsafe_allow_html=True)
 
     st.divider()

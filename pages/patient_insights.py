@@ -3,11 +3,11 @@ import plotly.graph_objects as go
 import plotly.express as px
 import pandas as pd
 from utils.auth import require_role, logout
-from utils.db import get_users
+from utils.db import get_user
 
 def show():
     require_role(["patient"])
-    user = get_users().get(st.session_state.username, {})
+    user = get_user(st.session_state.username) or {}
     name = user.get("name", st.session_state.username)
     predictions = user.get("data", {}).get("predictions", [])
 
